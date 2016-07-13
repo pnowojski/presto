@@ -33,6 +33,7 @@ import com.facebook.presto.server.ServerMainModule;
 import com.facebook.presto.server.ShutdownAction;
 import com.facebook.presto.spi.Node;
 import com.facebook.presto.spi.Plugin;
+import com.facebook.presto.spiller.SpillerFactory;
 import com.facebook.presto.split.SplitManager;
 import com.facebook.presto.sql.parser.SqlParserOptions;
 import com.facebook.presto.testing.ProcedureTester;
@@ -109,6 +110,7 @@ public class TestingPrestoServer
     private final Announcer announcer;
     private final QueryManager queryManager;
     private final TaskManager taskManager;
+    private final SpillerFactory spillerFactory;
     private final GracefulShutdownHandler gracefulShutdownHandler;
     private final ShutdownAction shutdownAction;
     private final boolean coordinator;
@@ -263,6 +265,7 @@ public class TestingPrestoServer
         serviceSelectorManager = injector.getInstance(ServiceSelectorManager.class);
         gracefulShutdownHandler = injector.getInstance(GracefulShutdownHandler.class);
         taskManager = injector.getInstance(TaskManager.class);
+        spillerFactory = injector.getInstance(SpillerFactory.class);
         shutdownAction = injector.getInstance(ShutdownAction.class);
         announcer = injector.getInstance(Announcer.class);
 
@@ -378,6 +381,11 @@ public class TestingPrestoServer
     public TaskManager getTaskManager()
     {
         return taskManager;
+    }
+
+    public SpillerFactory getSpillerFactory()
+    {
+        return spillerFactory;
     }
 
     public ShutdownAction getShutdownAction()

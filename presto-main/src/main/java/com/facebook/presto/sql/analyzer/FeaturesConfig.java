@@ -21,6 +21,7 @@ import io.airlift.configuration.LegacyConfig;
 import io.airlift.units.DataSize;
 
 import javax.validation.constraints.Min;
+import javax.validation.constraints.NotNull;
 
 import java.util.List;
 
@@ -36,6 +37,11 @@ public class FeaturesConfig
         public static final String COLUMNAR_DICTIONARY = "columnar_dictionary";
 
         public static final List<String> AVAILABLE_OPTIONS = ImmutableList.of(DISABLED, COLUMNAR, COLUMNAR_DICTIONARY);
+    }
+
+    public static class SpillerImplementation
+    {
+        public static final String BINARY_FILE = "binary_file";
     }
 
     private boolean experimentalSyntaxEnabled;
@@ -58,6 +64,7 @@ public class FeaturesConfig
     private RegexLibrary regexLibrary = JONI;
     private boolean spillEnabled;
     private DataSize operatorMemoryLimitBeforeSpill = new DataSize(4, DataSize.Unit.MEGABYTE);
+    private String spillerImplementation = SpillerImplementation.BINARY_FILE;
 
     public boolean isResourceGroupsEnabled()
     {
@@ -279,6 +286,19 @@ public class FeaturesConfig
     public FeaturesConfig setOperatorMemoryLimitBeforeSpill(DataSize operatorMemoryLimitBeforeSpill)
     {
         this.operatorMemoryLimitBeforeSpill = operatorMemoryLimitBeforeSpill;
+        return this;
+    }
+
+    @NotNull
+    public String getSpillerImplementation()
+    {
+        return spillerImplementation;
+    }
+
+    @Config("experimental.spiller-implementation")
+    public FeaturesConfig setSpillerImplementation(String spillerImplementation)
+    {
+        this.spillerImplementation = spillerImplementation;
         return this;
     }
 }
