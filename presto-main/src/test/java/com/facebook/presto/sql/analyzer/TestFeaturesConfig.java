@@ -22,6 +22,7 @@ import java.util.Map;
 
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.ProcessingOptimization.COLUMNAR_DICTIONARY;
 import static com.facebook.presto.sql.analyzer.FeaturesConfig.ProcessingOptimization.DISABLED;
+import static com.facebook.presto.sql.analyzer.FeaturesConfig.SpillerImplementation.BINARY_FILE;
 import static com.facebook.presto.sql.analyzer.RegexLibrary.JONI;
 import static com.facebook.presto.sql.analyzer.RegexLibrary.RE2J;
 import static io.airlift.configuration.testing.ConfigAssertions.assertDeprecatedEquivalence;
@@ -50,7 +51,13 @@ public class TestFeaturesConfig
                 .setRegexLibrary(JONI)
                 .setRe2JDfaStatesLimit(Integer.MAX_VALUE)
                 .setRe2JDfaRetries(5)
+<<<<<<< a07990a1aa689101be7da42965b30b03be6f2809
                 .setOperatorMemoryLimitBeforeSpill(DataSize.valueOf("0MB")));
+=======
+                .setResourceGroupManager(FILE_BASED_RESOURCE_GROUP_MANAGER)
+                .setOperatorMemoryLimitBeforeSpill(DataSize.valueOf("0MB"))
+                .setSpillerImplementation(BINARY_FILE));
+>>>>>>> Make Spiller Factory pluggable
     }
 
     @Test
@@ -74,6 +81,7 @@ public class TestFeaturesConfig
                 .put("re2j.dfa-states-limit", "42")
                 .put("re2j.dfa-retries", "42")
                 .put("experimental.operator-memory-limit-before-spill", "100MB")
+                .put("experimental.spiller-implementation", "custom")
                 .build();
         Map<String, String> properties = new ImmutableMap.Builder<String, String>()
                 .put("experimental-syntax-enabled", "true")
@@ -93,6 +101,7 @@ public class TestFeaturesConfig
                 .put("re2j.dfa-states-limit", "42")
                 .put("re2j.dfa-retries", "42")
                 .put("experimental.operator-memory-limit-before-spill", "100MB")
+                .put("experimental.spiller-implementation", "custom")
                 .build();
 
         FeaturesConfig expected = new FeaturesConfig()
@@ -112,7 +121,8 @@ public class TestFeaturesConfig
                 .setRegexLibrary(RE2J)
                 .setRe2JDfaStatesLimit(42)
                 .setRe2JDfaRetries(42)
-                .setOperatorMemoryLimitBeforeSpill(DataSize.valueOf("100MB"));
+                .setOperatorMemoryLimitBeforeSpill(DataSize.valueOf("100MB"))
+                .setSpillerImplementation("custom");
 
         assertFullMapping(properties, expected);
         assertDeprecatedEquivalence(FeaturesConfig.class, properties, propertiesLegacy);
