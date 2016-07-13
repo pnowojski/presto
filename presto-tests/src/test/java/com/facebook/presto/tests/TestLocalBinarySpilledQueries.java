@@ -20,6 +20,7 @@ import com.facebook.presto.testing.LocalQueryRunner;
 import com.facebook.presto.tpch.TpchConnectorFactory;
 import com.facebook.presto.tpch.testing.SampledTpchConnectorFactory;
 import com.google.common.collect.ImmutableMap;
+import org.testng.annotations.Test;
 
 import static com.facebook.presto.testing.TestingSession.testSessionBuilder;
 import static com.facebook.presto.tpch.TpchMetadata.TINY_SCHEMA_NAME;
@@ -68,5 +69,44 @@ public class TestLocalBinarySpilledQueries
                 .setCatalog(TPCH_SAMPLED_SCHEMA)
                 .setSchema(TINY_SCHEMA_NAME)
                 .build();
+    }
+
+    @Test
+    public void testNonOrderableKey()
+            throws Exception
+    {
+        assertQueryFails("SELECT col[1], count FROM (SELECT MAP(ARRAY[1], ARRAY[custkey]) col, COUNT(*) count FROM ORDERS GROUP BY 1)", "Spilling requires all types in GROUP BY key to be orderable");
+    }
+
+    @Test(enabled = false)
+    @Override
+    public void testGroupByMap()
+            throws Exception
+    {
+        super.testGroupByMap();
+    }
+
+    @Test(enabled = false)
+    @Override
+    public void testGroupByComplexMap()
+            throws Exception
+    {
+        super.testGroupByComplexMap();
+    }
+
+    @Test(enabled = false)
+    @Override
+    public void testGroupByRow()
+            throws Exception
+    {
+        super.testGroupByRow();
+    }
+
+    @Test(enabled = false)
+    @Override
+    public void testRowFieldAccessorInAggregate()
+            throws Exception
+    {
+        super.testRowFieldAccessorInAggregate();
     }
 }
