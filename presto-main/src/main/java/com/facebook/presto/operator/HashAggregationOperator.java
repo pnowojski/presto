@@ -17,9 +17,11 @@ import com.facebook.presto.operator.aggregation.Accumulator;
 import com.facebook.presto.operator.aggregation.AccumulatorFactory;
 import com.facebook.presto.operator.aggregation.builder.HashAggregationBuilder;
 import com.facebook.presto.operator.aggregation.builder.InMemoryHashAggregationBuilder;
+import com.facebook.presto.operator.aggregation.builder.SpillableHashAggregationBuilder;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.spiller.SpillerFactory;
 import com.facebook.presto.sql.planner.plan.AggregationNode.Step;
 import com.facebook.presto.sql.planner.plan.PlanNodeId;
 import com.facebook.presto.type.TypeUtils;
@@ -35,6 +37,7 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.operator.aggregation.builder.InMemoryHashAggregationBuilder.toTypes;
 import static com.google.common.base.Preconditions.checkState;
+import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static java.util.Objects.requireNonNull;
 
 public class HashAggregationOperator
@@ -56,6 +59,8 @@ public class HashAggregationOperator
         private final int expectedGroups;
         private final List<Type> types;
         private final long maxPartialMemory;
+        private final DataSize memoryLimitBeforeSpill;
+        private final Optional<SpillerFactory> spillerFactory;
 
         private boolean closed;
 
@@ -72,6 +77,36 @@ public class HashAggregationOperator
                 int expectedGroups,
                 DataSize maxPartialMemory)
         {
+            this(operatorId,
+                    planNodeId,
+                    groupByTypes,
+                    groupByChannels,
+                    globalAggregationGroupIds,
+                    step,
+                    accumulatorFactories,
+                    hashChannel,
+                    groupIdChannel,
+                    expectedGroups,
+                    maxPartialMemory,
+                    new DataSize(0, MEGABYTE),
+                    Optional.empty());
+        }
+
+        public HashAggregationOperatorFactory(
+                int operatorId,
+                PlanNodeId planNodeId,
+                List<? extends Type> groupByTypes,
+                List<Integer> groupByChannels,
+                List<Integer> globalAggregationGroupIds,
+                Step step,
+                List<AccumulatorFactory> accumulatorFactories,
+                Optional<Integer> hashChannel,
+                Optional<Integer> groupIdChannel,
+                int expectedGroups,
+                DataSize maxPartialMemory,
+                DataSize memoryLimitBeforeSpill,
+                Optional<SpillerFactory> spillerFactory)
+        {
             this.operatorId = operatorId;
             this.planNodeId = requireNonNull(planNodeId, "planNodeId is null");
             this.hashChannel = requireNonNull(hashChannel, "hashChannel is null");
@@ -83,6 +118,8 @@ public class HashAggregationOperator
             this.accumulatorFactories = ImmutableList.copyOf(accumulatorFactories);
             this.expectedGroups = expectedGroups;
             this.maxPartialMemory = requireNonNull(maxPartialMemory, "maxPartialMemory is null").toBytes();
+            this.memoryLimitBeforeSpill = requireNonNull(memoryLimitBeforeSpill, "memoryLimitBeforeSpill is null");
+            this.spillerFactory = requireNonNull(spillerFactory, "spillerFactory is null");
 
             this.types = toTypes(groupByTypes, step, accumulatorFactories, hashChannel);
         }
@@ -114,7 +151,9 @@ public class HashAggregationOperator
                     accumulatorFactories,
                     hashChannel,
                     groupIdChannel,
-                    expectedGroups);
+                    expectedGroups,
+                    memoryLimitBeforeSpill,
+                    spillerFactory);
             return hashAggregationOperator;
         }
 
@@ -138,7 +177,9 @@ public class HashAggregationOperator
                     hashChannel,
                     groupIdChannel,
                     expectedGroups,
-                    new DataSize(maxPartialMemory, Unit.BYTE));
+                    new DataSize(maxPartialMemory, Unit.BYTE),
+                    memoryLimitBeforeSpill,
+                    spillerFactory);
         }
     }
 
@@ -151,6 +192,8 @@ public class HashAggregationOperator
     private final Optional<Integer> hashChannel;
     private final Optional<Integer> groupIdChannel;
     private final int expectedGroups;
+    private final Optional<SpillerFactory> spillerFactory;
+    private final DataSize memoryLimitBeforeSpill;
 
     private final List<Type> types;
 
@@ -169,7 +212,9 @@ public class HashAggregationOperator
             List<AccumulatorFactory> accumulatorFactories,
             Optional<Integer> hashChannel,
             Optional<Integer> groupIdChannel,
-            int expectedGroups)
+            int expectedGroups,
+            DataSize memoryLimitBeforeSpill,
+            Optional<SpillerFactory> spillerFactory)
     {
         this.operatorContext = requireNonNull(operatorContext, "operatorContext is null");
         requireNonNull(step, "step is null");
@@ -185,6 +230,8 @@ public class HashAggregationOperator
         this.step = step;
         this.expectedGroups = expectedGroups;
         this.types = toTypes(groupByTypes, step, accumulatorFactories, hashChannel);
+        this.spillerFactory = requireNonNull(spillerFactory, "spillerFactory is null");
+        this.memoryLimitBeforeSpill = requireNonNull(memoryLimitBeforeSpill, "memoryLimitBeforeSpill is null");
     }
 
     @Override
@@ -214,7 +261,15 @@ public class HashAggregationOperator
     @Override
     public boolean needsInput()
     {
-        return !finishing && outputIterator == null && (aggregationBuilder == null || !aggregationBuilder.checkFullAndUpdateMemory());
+        if (finishing || outputIterator != null) {
+            return false;
+        }
+        else if (aggregationBuilder != null && (aggregationBuilder.checkFullAndUpdateMemory() || aggregationBuilder.isBusy())) {
+            return false;
+        }
+        else {
+            return true;
+        }
     }
 
     @Override
@@ -225,14 +280,28 @@ public class HashAggregationOperator
         inputProcessed = true;
 
         if (aggregationBuilder == null) {
-            aggregationBuilder = new InMemoryHashAggregationBuilder(
-                    accumulatorFactories,
-                    step,
-                    expectedGroups,
-                    groupByTypes,
-                    groupByChannels,
-                    hashChannel,
-                    operatorContext);
+            if (step.isOutputPartial() || memoryLimitBeforeSpill.toBytes() == 0) {
+                aggregationBuilder = new InMemoryHashAggregationBuilder(
+                        accumulatorFactories,
+                        step,
+                        expectedGroups,
+                        groupByTypes,
+                        groupByChannels,
+                        hashChannel,
+                        operatorContext);
+            }
+            else {
+                aggregationBuilder = new SpillableHashAggregationBuilder(
+                        accumulatorFactories,
+                        step,
+                        expectedGroups,
+                        groupByTypes,
+                        groupByChannels,
+                        hashChannel,
+                        operatorContext,
+                        memoryLimitBeforeSpill,
+                        spillerFactory);
+            }
 
             // assume initial aggregationBuilder is not full
         }
@@ -268,6 +337,11 @@ public class HashAggregationOperator
 
             // only flush if we are finishing or the aggregation builder is full
             if (!finishing && (aggregationBuilder == null || !aggregationBuilder.checkFullAndUpdateMemory())) {
+                return null;
+            }
+
+            // don't ask for output if builder is busy
+            if (aggregationBuilder.isBusy()) {
                 return null;
             }
 
