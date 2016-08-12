@@ -124,11 +124,10 @@ public class TestDecimalCasts
     public void testDoubleToLongDecimalCasts()
     {
         assertDecimalFunction("CAST(234.0 AS DECIMAL(20,1))", decimal("0000000000000000234.0"));
+        assertDecimalFunction("CAST(.25 AS DECIMAL(20,5))", decimal("000000000000000.25000"));
         assertDecimalFunction("CAST(.01 AS DECIMAL(20,3))", decimal("00000000000000000.010"));
         assertDecimalFunction("CAST(.0 AS DECIMAL(20,3))", decimal("00000000000000000.000"));
         assertDecimalFunction("CAST(0.0 AS DECIMAL(20,0))", decimal("00000000000000000000"));
-        assertDecimalFunction("CAST(0.0 AS DECIMAL(20,0))", decimal("00000000000000000000"));
-        assertDecimalFunction("CAST(1000.0 AS DECIMAL(20,0))", decimal("00000000000000001000"));
         assertDecimalFunction("CAST(1000.01 AS DECIMAL(20,2))", decimal("000000000000001000.01"));
         assertDecimalFunction("CAST(-234.0 AS DECIMAL(20,0))", decimal("-00000000000000000234"));
         assertDecimalFunction("CAST(12345678901234567.0 AS DECIMAL(20,0))", decimal("00012345678901234568"));
