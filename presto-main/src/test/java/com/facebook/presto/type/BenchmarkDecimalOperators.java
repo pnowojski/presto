@@ -76,7 +76,7 @@ import static org.openjdk.jmh.annotations.Scope.Thread;
 
 @State(Scope.Thread)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-@Fork(value = 3, jvmArgs = "-XX:MaxInlineSize=100")
+@Fork(value = 1, jvmArgs = "-XX:MaxInlineSize=100")
 @Warmup(iterations = 20, timeUnit = TimeUnit.MILLISECONDS)
 @Measurement(iterations = 10, timeUnit = TimeUnit.MILLISECONDS)
 public class BenchmarkDecimalOperators
