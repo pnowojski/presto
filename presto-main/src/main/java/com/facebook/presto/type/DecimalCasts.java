@@ -459,26 +459,32 @@ public final class DecimalCasts
     @UsedByGeneratedCode
     public static long floatToShortDecimal(long value, long precision, long scale, long tenToScale)
     {
-        // TODO: optimize
-        BigDecimal decimal = new BigDecimal(intBitsToFloat((int) value));
-        decimal = decimal.setScale((int) scale, ROUND_HALF_UP);
-        if (overflows(decimal, precision)) {
-            throw new PrestoException(INVALID_CAST_ARGUMENT, format("Cannot cast FLOAT '%s' to DECIMAL(%s, %s)", intBitsToFloat((int) value), precision, scale));
+        // TODO: implement specialized version for short decimals
+        Slice decimal = floatToLongDecimal(value, precision, scale, tenToScale);
+
+        long low = UnscaledDecimal128Arithmetic.getLong(decimal, 0);
+        long high = UnscaledDecimal128Arithmetic.getLong(decimal, 1);
+
+        checkState(high == 0 && low >= 0, "Unexpected long decimal");
+
+        if (UnscaledDecimal128Arithmetic.isNegative(decimal)) {
+            return -low;
         }
-        return decimal.unscaledValue().longValue();
+        else {
+            return low;
+        }
     }
 
     @UsedByGeneratedCode
     public static Slice floatToLongDecimal(long value, long precision, long scale, long tenToScale)
     {
-        // TODO: optimize
-        BigDecimal decimal = new BigDecimal(intBitsToFloat((int) value));
-        decimal = decimal.setScale((int) scale, ROUND_HALF_UP);
-        if (overflows(decimal, precision)) {
-            throw new PrestoException(INVALID_CAST_ARGUMENT, format("Cannot cast FLOAT '%s' to DECIMAL(%s, %s)", intBitsToFloat((int) value), precision, scale));
+        //TODO: optimize, implement specialized float to decimal conversion instead of using double to decimal
+        float floatValue = intBitsToFloat((int) value);
+        Slice decimal = UnscaledDecimal128Arithmetic.doubleToLongDecimal(floatValue, precision, (int) scale);
+        if (overflows(decimal, (int) precision)) {
+            throw new PrestoException(INVALID_CAST_ARGUMENT, format("Cannot cast FLOAT '%s' to DECIMAL(%s, %s)", floatValue, precision, scale));
         }
-        BigInteger decimalBigInteger = decimal.unscaledValue();
-        return encodeUnscaledValue(decimalBigInteger);
+        return decimal;
     }
 
     @UsedByGeneratedCode
