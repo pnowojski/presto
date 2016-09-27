@@ -58,6 +58,6 @@ public class BinarySpillerFactory
     @Override
     public Spiller create(List<Type> types)
     {
-        return new BinaryFileSpiller(blockEncodingSerde, executor, spillPath);
+        return new BinaryFileSpiller(blockEncodingSerde, executor, spillPath, spilledData);
     }
 }
