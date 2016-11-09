@@ -108,11 +108,6 @@ public class HashAggregationOperator
                         {
                             throw new UnsupportedOperationException();
                         }
-
-                        public long getTotalSpilledBytes()
-                        {
-                            return 0;
-                        }
                     },
                     joinCompiler);
         }
