@@ -22,7 +22,9 @@ import com.facebook.presto.tpch.TpchConnectorFactory;
 import com.google.common.collect.ImmutableMap;
 import org.testng.annotations.Test;
 
+import static com.facebook.presto.SystemSessionProperties.DISTRIBUTION_CONCURRENCY;
 import static com.facebook.presto.SystemSessionProperties.REORDER_JOINS;
+import static com.facebook.presto.SystemSessionProperties.TASK_CONCURRENCY;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.facebook.presto.testing.MaterializedResult.resultBuilder;
@@ -45,6 +47,8 @@ public class TestLocalQueries
                 .setCatalog("local")
                 .setSchema(TINY_SCHEMA_NAME)
                 .setSystemProperty(REORDER_JOINS, "true")
+                .setSystemProperty(TASK_CONCURRENCY, "8")
+                .setSystemProperty(DISTRIBUTION_CONCURRENCY, "2")
                 .build();
 
         LocalQueryRunner localQueryRunner = new LocalQueryRunner(defaultSession);
@@ -77,5 +81,11 @@ public class TestLocalQueries
                 .build();
 
         assertEquals(result, expectedStatistics);
+    }
+
+    @Test
+    public void test()
+    {
+        super.testSimpleJoin();
     }
 }

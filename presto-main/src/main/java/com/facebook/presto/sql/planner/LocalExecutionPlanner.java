@@ -176,6 +176,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.SystemSessionProperties.getDistributionConcurrency;
 import static com.facebook.presto.SystemSessionProperties.getOperatorMemoryLimitBeforeSpill;
 import static com.facebook.presto.SystemSessionProperties.getTaskConcurrency;
 import static com.facebook.presto.SystemSessionProperties.getTaskWriterCount;
@@ -196,6 +197,8 @@ import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.getExpressionT
 import static com.facebook.presto.sql.analyzer.ExpressionAnalyzer.getExpressionTypesFromInput;
 import static com.facebook.presto.sql.planner.SystemPartitioningHandle.COORDINATOR_DISTRIBUTION;
 import static com.facebook.presto.sql.planner.SystemPartitioningHandle.FIXED_BROADCAST_DISTRIBUTION;
+import static com.facebook.presto.sql.planner.SystemPartitioningHandle.FIXED_HASH_DISTRIBUTION;
+import static com.facebook.presto.sql.planner.SystemPartitioningHandle.FIXED_RANDOM_DISTRIBUTION;
 import static com.facebook.presto.sql.planner.SystemPartitioningHandle.SINGLE_DISTRIBUTION;
 import static com.facebook.presto.sql.planner.plan.ExchangeNode.Scope.LOCAL;
 import static com.facebook.presto.sql.planner.plan.JoinNode.Type.FULL;
@@ -1776,6 +1779,8 @@ public class LocalExecutionPlanner
                 context.setDriverInstanceCount(driverInstanceCount);
             }
 
+            int distributionConcurrency = getDistributionConcurrency(session);
+
             List<Type> types = getSourceOperatorTypes(node, context.getTypes());
             List<Integer> channels = node.getPartitioningScheme().getPartitioning().getArguments().stream()
                     .map(argument -> node.getOutputSymbols().indexOf(argument.getColumn()))
@@ -1783,7 +1788,8 @@ public class LocalExecutionPlanner
             Optional<Integer> hashChannel = node.getPartitioningScheme().getHashColumn()
                     .map(symbol -> node.getOutputSymbols().indexOf(symbol));
 
-            LocalExchange localExchange = new LocalExchange(node.getPartitioningScheme().getPartitioning().getHandle(), driverInstanceCount, types, channels, hashChannel);
+            PartitioningHandle partitioningHandle = node.getPartitioningScheme().getPartitioning().getHandle();
+            LocalExchange localExchange = new LocalExchange(partitioningHandle, driverInstanceCount, types, channels, hashChannel);
 
             for (int i = 0; i < node.getSources().size(); i++) {
                 PlanNode sourceNode = node.getSources().get(i);
@@ -1791,13 +1797,36 @@ public class LocalExecutionPlanner
 
                 LocalExecutionPlanContext subContext = context.createSubContext();
                 PhysicalOperation source = sourceNode.accept(this, subContext);
-                List<OperatorFactory> operatorFactories = new ArrayList<>(source.getOperatorFactories());
 
-                Function<Page, Page> pagePreprocessor = enforceLayoutProcessor(expectedLayout, source.getLayout());
-                operatorFactories.add(new LocalExchangeSinkOperatorFactory(subContext.getNextOperatorId(), node.getId(), localExchange.createSinkFactory(), pagePreprocessor));
+                if (distributionConcurrency == 1 || partitioningHandle.equals(FIXED_HASH_DISTRIBUTION)) {
+                    List<OperatorFactory> operatorFactories = new ArrayList<>(source.getOperatorFactories());
 
-                DriverFactory driverFactory = new DriverFactory(subContext.isInputDriver(), false, operatorFactories, subContext.getDriverInstanceCount());
-                context.addDriverFactory(driverFactory);
+                    Function<Page, Page> pagePreprocessor = enforceLayoutProcessor(expectedLayout, source.getLayout());
+                    operatorFactories.add(new LocalExchangeSinkOperatorFactory(subContext.getNextOperatorId(), node.getId(), localExchange.createSinkFactory(), pagePreprocessor));
+
+                    DriverFactory driverFactory = new DriverFactory(subContext.isInputDriver(), false, operatorFactories, subContext.getDriverInstanceCount());
+                    context.addDriverFactory(driverFactory);
+                }
+                else {
+                    LocalExchange localExchangeBooster = new LocalExchange(FIXED_RANDOM_DISTRIBUTION, distributionConcurrency, types, ImmutableList.of(), Optional.empty());
+
+                    List<OperatorFactory> boosterOperatorFactories = new ArrayList<>(source.getOperatorFactories());
+
+                    Function<Page, Page> pagePreprocessor = enforceLayoutProcessor(expectedLayout, source.getLayout());
+                    boosterOperatorFactories.add(new LocalExchangeSinkOperatorFactory(subContext.getNextOperatorId(), node.getId(), localExchangeBooster.createSinkFactory(), pagePreprocessor));
+
+                    DriverFactory boosterDriverFactory = new DriverFactory(subContext.isInputDriver(), false, boosterOperatorFactories, subContext.getDriverInstanceCount());
+                    context.addDriverFactory(boosterDriverFactory);
+
+                    LocalExecutionPlanContext subSubContext = context.createSubContext();
+
+                    List<OperatorFactory> operatorFactories = new ArrayList<>();
+                    operatorFactories.add(new LocalExchangeSourceOperatorFactory(subSubContext.getNextOperatorId(), node.getId(), localExchangeBooster));
+                    operatorFactories.add(new LocalExchangeSinkOperatorFactory(subSubContext.getNextOperatorId(), node.getId(), localExchange.createSinkFactory(), Function.identity()));
+
+                    DriverFactory driverFactory = new DriverFactory(subSubContext.isInputDriver(), false, operatorFactories, OptionalInt.of(distributionConcurrency));
+                    context.addDriverFactory(driverFactory);
+                }
             }
 
             // the main driver is not an input... the exchange sources are the input for the plan
