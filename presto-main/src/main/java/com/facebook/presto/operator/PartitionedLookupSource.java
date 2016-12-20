@@ -216,13 +216,13 @@ public class PartitionedLookupSource
             }
         }
 
-        public synchronized void positionVisited(int partition, int position)
+        public void positionVisited(int partition, int position)
         {
             verify(!finished);
             visitedPositions[partition][position] = true;
         }
 
-        public synchronized OuterPositionIterator getOuterPositionIterator()
+        public OuterPositionIterator getOuterPositionIterator()
         {
             finished = true;
             LookupSource[] lookupSources = lookupSourceSuppliers.stream()
