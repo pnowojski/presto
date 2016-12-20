@@ -555,11 +555,20 @@ public class LocalQueryRunner
     public List<Driver> createDrivers(Session session, @Language("SQL") String sql, OutputFactory outputFactory, TaskContext taskContext)
     {
         Plan plan = createPlan(session, sql);
-
         if (printPlan) {
             System.out.println(PlanPrinter.textLogicalPlan(plan.getRoot(), plan.getTypes(), metadata, costCalculator, session));
         }
 
+        return createDrivers(session, plan, outputFactory, taskContext);
+    }
+
+    public List<Driver> createDrivers(Plan plan, OutputFactory outputFactory, TaskContext taskContext)
+    {
+        return createDrivers(defaultSession, plan, outputFactory, taskContext);
+    }
+
+    public List<Driver> createDrivers(Session session, Plan plan, OutputFactory outputFactory, TaskContext taskContext)
+    {
         SubPlan subplan = PlanFragmenter.createSubPlans(session, metadata, plan);
         if (!subplan.getChildren().isEmpty()) {
             throw new AssertionError("Expected subplan to have no children");
@@ -644,6 +653,11 @@ public class LocalQueryRunner
         }
 
         return ImmutableList.copyOf(drivers);
+    }
+
+    public Plan createPlan(@Language("SQL") String sql)
+    {
+        return createPlan(defaultSession, sql, LogicalPlanner.Stage.OPTIMIZED_AND_VALIDATED);
     }
 
     public Plan createPlan(Session session, @Language("SQL") String sql)
