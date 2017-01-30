@@ -151,8 +151,10 @@ public class SourcePartitionedScheduler
     {
         switch (state) {
             case STARTED:
-                // we have not scheduled a single split so far
-                return scheduleEmptySplit();
+                if (stage.getFragment().hasDefaultOutput()) {
+                    // we have not scheduled a single split so far
+                    return scheduleEmptySplit();
+                }
             case SCHEDULED:
                 state = State.FINISHED;
                 splitSource.close();
